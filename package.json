@@ -1,0 +1,8 @@
+{
+  "name": "impostor-tico-monorepo",
+  "private": true,
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "postinstall": "cd server && npm install && cd ../client && npm install"
+  }
+}
