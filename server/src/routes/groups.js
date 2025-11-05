@@ -165,7 +165,7 @@ router.get('/:code', requireAdmin, (req, res) => {
     budgetAmount: group.budgetAmount,
     ownerName: group.ownerName,
     ownerEmail: group.ownerEmail,
-    ownerParticipantId: group.ownerParticipantId?.toString(),
+    ownerParticipantId: group.ownerParticipantId.toString(),
     allowReveal: group.allowReveal,
     assignmentsGenerated: group.assignmentsGenerated,
     participants,
