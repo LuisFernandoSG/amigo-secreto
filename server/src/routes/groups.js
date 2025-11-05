@@ -97,13 +97,7 @@ router.post('/', async (req, res, next) => {
     if (error) {
       return res.status(400).json({ message: 'Datos inválidos', details: error.details });
     }
-
-    res.json({
-      message: "Servidor activo ✅",
-      database: "MongoDB conectado",
-      time: new Date().toISOString(),
-    });
-
+    
     const joinCode = nanoid(8).toUpperCase();
     const adminCode = nanoid(12).toUpperCase();
     const hostAccessCode = nanoid(12).toUpperCase();
