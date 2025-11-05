@@ -3,7 +3,9 @@ import Joi from 'joi';
 export const createGroupSchema = Joi.object({
   name: Joi.string().min(3).max(120).required(),
   ownerName: Joi.string().min(2).max(120).required(),
-  ownerEmail: Joi.string().email().allow('', null)
+  ownerEmail: Joi.string().email().allow('', null),
+  eventDate: Joi.date().iso().allow(null, ''),
+  budgetAmount: Joi.number().min(0).max(100000000).allow(null)
 });
 
 export const addParticipantSchema = Joi.object({
@@ -19,5 +21,7 @@ export const wishlistItemSchema = Joi.object({
 });
 
 export const updateSettingsSchema = Joi.object({
-  allowReveal: Joi.boolean().required()
-});
+  allowReveal: Joi.boolean(),
+  eventDate: Joi.date().iso().allow(null, ''),
+  budgetAmount: Joi.number().min(0).max(100000000).allow(null)
+}).or('allowReveal', 'eventDate', 'budgetAmount');

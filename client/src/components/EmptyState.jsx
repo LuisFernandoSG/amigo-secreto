@@ -1,7 +1,7 @@
 export const EmptyState = ({ title, message, icon }) => (
-  <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-white/5 p-6 text-center text-slate-300">
+  <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-holly-200/60 bg-snow-50/80 p-6 text-center text-moss-600">
     {icon ? <div className="text-4xl">{icon}</div> : null}
-    <h3 className="text-lg font-semibold text-white">{title}</h3>
-    <p className="text-sm text-slate-400">{message}</p>
+    <h3 className="text-base font-semibold text-moss-800">{title}</h3>
+    <p className="text-sm text-moss-600">{message}</p>
   </div>
 );

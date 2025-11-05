@@ -8,8 +8,88 @@ import {
   wishlistItemSchema
 } from '../utils/validators.js';
 import { generateAssignments } from '../utils/assignment.js';
+import { broadcastGroupEvent } from '../services/realtime.js';
 
 const router = express.Router();
+
+const sanitizeWishlist = (wishlist = []) =>
+  wishlist.map((item) => ({
+    id: item._id.toString(),
+    title: item.title,
+    url: item.url,
+    imageUrl: item.imageUrl,
+    note: item.note,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  }));
+
+const participantForAdmin = (participant) => ({
+  id: participant._id.toString(),
+  name: participant.name,
+  email: participant.email,
+  wishlist: sanitizeWishlist(participant.wishlist),
+  wishlistCount: participant.wishlist.length,
+  isOwner: participant.isOwner || false,
+  createdAt: participant.createdAt,
+  updatedAt: participant.updatedAt
+});
+
+const participantForSelf = (participant) => ({
+  id: participant._id.toString(),
+  name: participant.name,
+  email: participant.email,
+  isOwner: participant.isOwner || false,
+  wishlist: sanitizeWishlist(participant.wishlist),
+  createdAt: participant.createdAt,
+  updatedAt: participant.updatedAt
+});
+
+const participantForPeers = (participant) => ({
+  id: participant._id.toString(),
+  name: participant.name,
+  isOwner: participant.isOwner || false,
+  wishlist: sanitizeWishlist(participant.wishlist)
+});
+
+router.param('code', async (req, res, next, code) => {
+  try {
+    const group = await Group.findOne({ joinCode: code.toUpperCase() });
+    if (!group) {
+      return res.status(404).json({ message: 'Grupo no encontrado' });
+    }
+    req.group = group;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+});
+
+const requireAdmin = (req, res, next) => {
+  const adminCode = String(req.headers['x-admin-code'] || '').toUpperCase();
+  if (!adminCode) {
+    return res.status(403).json({ message: 'Código de administrador requerido' });
+  }
+  if (req.group.adminCode !== adminCode) {
+    return res.status(403).json({ message: 'Código de administrador inválido' });
+  }
+  return next();
+};
+
+const requireParticipantAccess = (req, res, next) => {
+  const participant = req.group.participants.id(req.params.participantId);
+  if (!participant) {
+    return res.status(404).json({ message: 'Participante no encontrado' });
+  }
+  const accessCode = String(req.headers['x-access-code'] || '').toUpperCase();
+  if (!accessCode) {
+    return res.status(403).json({ message: 'Código de acceso requerido' });
+  }
+  if (participant.accessCode !== accessCode) {
+    return res.status(403).json({ message: 'Código de acceso inválido' });
+  }
+  req.participant = participant;
+  return next();
+};
 
 router.post('/', async (req, res, next) => {
   try {
@@ -19,48 +99,73 @@ router.post('/', async (req, res, next) => {
     }
 
     const joinCode = nanoid(8).toUpperCase();
+    const adminCode = nanoid(12).toUpperCase();
+    const hostAccessCode = nanoid(12).toUpperCase();
+
     const group = await Group.create({
       name: value.name,
+      joinCode,
       ownerName: value.ownerName,
       ownerEmail: value.ownerEmail,
-      joinCode
+      adminCode,
+      eventDate: value.eventDate ? new Date(value.eventDate) : undefined,
+      budgetAmount: value.budgetAmount ?? undefined
     });
 
+    group.participants.push({
+      name: value.ownerName,
+      email: value.ownerEmail,
+      accessCode: hostAccessCode,
+      isOwner: true
+    });
+    group.ownerParticipantId = group.participants[0]._id;
+
+    await group.save();
+
+    const ownerParticipant = group.participants.id(group.ownerParticipantId);
+
     res.status(201).json({
-      id: group._id,
-      joinCode: group.joinCode,
-      allowReveal: group.allowReveal,
+      id: group._id.toString(),
       name: group.name,
+      joinCode: group.joinCode,
+      adminCode: group.adminCode,
+      allowReveal: group.allowReveal,
+      assignmentsGenerated: group.assignmentsGenerated,
+      eventDate: group.eventDate,
+      budgetAmount: group.budgetAmount,
       ownerName: group.ownerName,
-      ownerEmail: group.ownerEmail
+      ownerEmail: group.ownerEmail,
+      hostParticipant: {
+        id: ownerParticipant._id.toString(),
+        name: ownerParticipant.name,
+        email: ownerParticipant.email,
+        accessCode: hostAccessCode
+      }
     });
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/:code', async (req, res, next) => {
-  try {
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() }).lean();
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
+router.get('/:code', requireAdmin, (req, res) => {
+  const group = req.group;
+  const participants = group.participants.map(participantForAdmin);
 
-    res.json({
-      id: group._id,
-      name: group.name,
-      joinCode: group.joinCode,
-      ownerName: group.ownerName,
-      ownerEmail: group.ownerEmail,
-      allowReveal: group.allowReveal,
-      assignmentsGenerated: group.assignmentsGenerated,
-      participants: group.participants,
-      createdAt: group.createdAt,
-      updatedAt: group.updatedAt
-    });
-  } catch (err) {
-    next(err);
-  }
+  res.json({
+    id: group._id.toString(),
+    name: group.name,
+    joinCode: group.joinCode,
+    eventDate: group.eventDate,
+    budgetAmount: group.budgetAmount,
+    ownerName: group.ownerName,
+    ownerEmail: group.ownerEmail,
+    ownerParticipantId: group.ownerParticipantId?.toString(),
+    allowReveal: group.allowReveal,
+    assignmentsGenerated: group.assignmentsGenerated,
+    participants,
+    createdAt: group.createdAt,
+    updatedAt: group.updatedAt
+  });
 });
 
 router.post('/:code/participants', async (req, res, next) => {
@@ -70,74 +175,72 @@ router.post('/:code/participants', async (req, res, next) => {
       return res.status(400).json({ message: 'Datos inválidos', details: error.details });
     }
 
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() });
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
+    const group = req.group;
+    const accessCode = nanoid(12).toUpperCase();
 
-    group.participants.push({
+    const participant = group.participants.create({
       name: value.name,
-      email: value.email
+      email: value.email,
+      accessCode
     });
+
+    group.participants.push(participant);
+    group.assignmentsGenerated = false;
+    group.allowReveal = false;
+
     await group.save();
 
-    const newParticipant = group.participants[group.participants.length - 1];
+    broadcastGroupEvent(group.joinCode, 'participants:added', {
+      participantId: participant._id.toString()
+    });
 
-    res.status(201).json({ participant: newParticipant });
+    res.status(201).json({
+      participant: participantForSelf(participant),
+      accessCode
+    });
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/:code/participants/:participantId', async (req, res, next) => {
-  try {
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() }).lean();
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
-
-    const participant = group.participants.find((p) => p._id.toString() === req.params.participantId);
-    if (!participant) {
-      return res.status(404).json({ message: 'Participante no encontrado' });
-    }
-
-    res.json({ participant });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.patch('/:code/settings', async (req, res, next) => {
+router.patch('/:code/settings', requireAdmin, async (req, res, next) => {
   try {
     const { value, error } = updateSettingsSchema.validate(req.body, { abortEarly: false });
     if (error) {
       return res.status(400).json({ message: 'Datos inválidos', details: error.details });
     }
 
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() });
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
+    if (typeof value.allowReveal === 'boolean') {
+      req.group.allowReveal = value.allowReveal;
     }
+    if (Object.prototype.hasOwnProperty.call(value, 'eventDate')) {
+      req.group.eventDate = value.eventDate ? new Date(value.eventDate) : undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'budgetAmount')) {
+      req.group.budgetAmount = value.budgetAmount ?? undefined;
+    }
+    await req.group.save();
 
-    group.allowReveal = value.allowReveal;
-    await group.save();
+    broadcastGroupEvent(req.group.joinCode, 'settings:updated', {
+      allowReveal: req.group.allowReveal,
+      eventDate: req.group.eventDate,
+      budgetAmount: req.group.budgetAmount
+    });
 
     res.json({
-      allowReveal: group.allowReveal,
-      assignmentsGenerated: group.assignmentsGenerated
+      allowReveal: req.group.allowReveal,
+      assignmentsGenerated: req.group.assignmentsGenerated,
+      eventDate: req.group.eventDate,
+      budgetAmount: req.group.budgetAmount
     });
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/:code/assignments', async (req, res, next) => {
+router.post('/:code/assignments', requireAdmin, async (req, res, next) => {
   try {
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() });
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
-
+    const group = req.group;
     if (group.participants.length < 2) {
       return res.status(400).json({ message: 'Se necesitan al menos dos participantes' });
     }
@@ -147,7 +250,13 @@ router.post('/:code/assignments', async (req, res, next) => {
       participant.assignedParticipantId = assignments.get(participant._id.toString());
     });
     group.assignmentsGenerated = true;
+    group.allowReveal = false;
+
     await group.save();
+
+    broadcastGroupEvent(group.joinCode, 'assignments:generated', {
+      assignmentsGenerated: true
+    });
 
     res.json({
       assignmentsGenerated: group.assignmentsGenerated,
@@ -158,94 +267,121 @@ router.post('/:code/assignments', async (req, res, next) => {
   }
 });
 
-router.get('/:code/participants/:participantId/assignment', async (req, res, next) => {
+router.delete('/:code', requireAdmin, async (req, res, next) => {
   try {
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() }).lean();
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
+    const joinCode = req.group.joinCode;
+    await req.group.deleteOne();
 
-    if (!group.assignmentsGenerated) {
-      return res.status(409).json({ message: 'Las asignaciones aún no han sido generadas' });
-    }
+    broadcastGroupEvent(joinCode, 'group:deleted', {});
 
-    if (!group.allowReveal) {
-      return res.status(403).json({ message: 'El administrador aún no habilita las revelaciones' });
-    }
-
-    const participant = group.participants.find((p) => p._id.toString() === req.params.participantId);
-    if (!participant) {
-      return res.status(404).json({ message: 'Participante no encontrado' });
-    }
-
-    const assigned = group.participants.find((p) => p._id.toString() === participant.assignedParticipantId?.toString());
-    if (!assigned) {
-      return res.status(404).json({ message: 'El amigo secreto no está disponible' });
-    }
-
-    res.json({
-      participant: {
-        _id: assigned._id,
-        name: assigned.name,
-        email: assigned.email,
-        wishlist: assigned.wishlist
-      }
-    });
+    res.status(204).send();
   } catch (err) {
     next(err);
   }
 });
 
-router.post('/:code/participants/:participantId/wishlist', async (req, res, next) => {
+router.get('/:code/participants/:participantId', requireParticipantAccess, (req, res) => {
+  const group = req.group;
+  const participant = req.participant;
+
+  const peers = group.participants
+    .filter((peer) => !peer._id.equals(participant._id))
+    .map(participantForPeers);
+
+  res.json({
+    group: {
+      id: group._id.toString(),
+      name: group.name,
+      joinCode: group.joinCode,
+      allowReveal: group.allowReveal,
+      assignmentsGenerated: group.assignmentsGenerated
+    },
+    participant: participantForSelf(participant),
+    peers,
+    eventDate: group.eventDate,
+    budgetAmount: group.budgetAmount
+  });
+});
+
+router.get('/:code/participants/:participantId/assignment', requireParticipantAccess, (req, res) => {
+  const group = req.group;
+  const participant = req.participant;
+
+  if (!group.assignmentsGenerated) {
+    return res.status(409).json({ message: 'Las asignaciones aún no han sido generadas' });
+  }
+
+  if (!group.allowReveal) {
+    return res.status(403).json({ message: 'El administrador aún no habilita las revelaciones' });
+  }
+
+  const assigned = group.participants.id(participant.assignedParticipantId);
+  if (!assigned) {
+    return res.status(404).json({ message: 'El amigo secreto no está disponible' });
+  }
+
+  res.json({
+    friend: {
+      id: assigned._id.toString(),
+      name: assigned.name,
+      wishlist: sanitizeWishlist(assigned.wishlist)
+    }
+  });
+});
+
+router.post('/:code/participants/:participantId/wishlist', requireParticipantAccess, async (req, res, next) => {
   try {
     const { value, error } = wishlistItemSchema.validate(req.body, { abortEarly: false });
     if (error) {
       return res.status(400).json({ message: 'Datos inválidos', details: error.details });
     }
 
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() });
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
+    req.participant.wishlist.push(value);
+    await req.group.save();
 
-    const participant = group.participants.id(req.params.participantId);
-    if (!participant) {
-      return res.status(404).json({ message: 'Participante no encontrado' });
-    }
+    broadcastGroupEvent(req.group.joinCode, 'wishlist:updated', {
+      participantId: req.participant._id.toString()
+    });
 
-    participant.wishlist.push(value);
-    await group.save();
-
-    res.status(201).json({ wishlist: participant.wishlist });
+    res.status(201).json({ wishlist: sanitizeWishlist(req.participant.wishlist) });
   } catch (err) {
     next(err);
   }
 });
 
-router.delete('/:code/participants/:participantId/wishlist/:itemId', async (req, res, next) => {
-  try {
-    const group = await Group.findOne({ joinCode: req.params.code.toUpperCase() });
-    if (!group) {
-      return res.status(404).json({ message: 'Grupo no encontrado' });
+router.delete(
+  '/:code/participants/:participantId/wishlist/:itemId',
+  requireParticipantAccess,
+  async (req, res, next) => {
+    try {
+      const item = req.participant.wishlist.id(req.params.itemId);
+
+      console.log('***********************************************');
+      console.log(item?._id);
+      console.log('***********************************************');
+
+      if (!item) {
+        return res.status(404).json({ message: 'Producto no encontrado' });
+      }
+
+      // ✅ Eliminar el subdocumento del wishlist
+      item.deleteOne(); // o item.remove()
+
+      // ✅ Guardar los cambios
+      await req.participant.save();
+      await req.group.save();
+
+      // Notificar a los demás
+      broadcastGroupEvent(req.group.joinCode, 'wishlist:updated', {
+        participantId: req.participant._id.toString()
+      });
+
+      res.json({ wishlist: sanitizeWishlist(req.participant.wishlist) });
+    } catch (err) {
+      next(err);
     }
-
-    const participant = group.participants.id(req.params.participantId);
-    if (!participant) {
-      return res.status(404).json({ message: 'Participante no encontrado' });
-    }
-
-    const item = participant.wishlist.id(req.params.itemId);
-    if (!item) {
-      return res.status(404).json({ message: 'Producto no encontrado' });
-    }
-
-    item.remove();
-    await group.save();
-
-    res.json({ wishlist: participant.wishlist });
-  } catch (err) {
-    next(err);
   }
-});
+);
+
 
 export default router;

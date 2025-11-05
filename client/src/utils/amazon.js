@@ -5,7 +5,15 @@ export const extractAsin = (url) => {
   return match ? match[1] : null;
 };
 
+console.log('ASIN_REGEX', ASIN_REGEX);  
+
 export const buildAmazonImageFromAsin = (asin) => {
   if (!asin) return null;
-  return `https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&ASIN=${asin}&Format=_SL160_&ID=AsinImage&MarketPlace=US&ServiceVersion=20070822&WS=1&tag=`;
+  return `https://m.media-amazon.com/images/I/${asin}._SL500_.jpg`;
+};
+
+export const buildAmazonSearchUrl = (query) => {
+  const trimmed = String(query || '').trim();
+  if (!trimmed) return 'https://www.amazon.com/';
+  return `https://www.amazon.com/s?k=${encodeURIComponent(trimmed)}`;
 };

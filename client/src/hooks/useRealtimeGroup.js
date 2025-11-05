@@ -5,9 +5,9 @@ export const useRealtimeGroup = (code, onEvent) => {
   useEffect(() => {
     if (!code) return undefined;
     const socket = getSocket();
-    const handler = (payload) => {
-      if (typeof onEvent === 'function') {
-        onEvent(payload);
+    const handler = (message) => {
+      if (typeof onEvent === 'function' && message) {
+        onEvent(message);
       }
     };
 

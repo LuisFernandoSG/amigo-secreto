@@ -1,13 +1,25 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import groupsRouter from './routes/groups.js';
 import { connectDb } from './config/db.js';
 import { CLIENT_ORIGIN, PORT } from './config/env.js';
+import { initRealtime } from './services/realtime.js';
 
 const app = express();
+const server = http.createServer(app);
 
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+const corsOrigins = CLIENT_ORIGIN === '*' ? '*' : CLIENT_ORIGIN.split(',').map((origin) => origin.trim());
+const corsOptions =
+  corsOrigins === '*'
+    ? { origin: '*' }
+    : {
+        origin: corsOrigins,
+        credentials: true
+      };
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -24,7 +36,8 @@ app.use((err, _req, res, _next) => {
 
 const start = async () => {
   await connectDb();
-  app.listen(PORT, () => {
+  initRealtime(server);
+  server.listen(PORT, () => {
     console.log(`Servidor escuchando en el puerto ${PORT}`);
   });
 };

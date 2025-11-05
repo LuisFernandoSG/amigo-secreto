@@ -1,173 +1,340 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '../components/Button.jsx';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card.jsx';
 import { TextField } from '../components/TextField.jsx';
-import { useGroupsApi } from '../services/groups.js';
+import { Button } from '../components/Button.jsx';
 import { Loader } from '../components/Loader.jsx';
+import { useGroupsApi } from '../services/groups.js';
+import {
+  getRememberedAdminGroups,
+  getRememberedParticipantLinks,
+  rememberAdminCode,
+  rememberParticipantAccess,
+  rememberParticipantForGroup
+} from '../utils/storage.js';
 
 export const LandingPage = () => {
   const navigate = useNavigate();
-  const groupsApi = useGroupsApi();
-  const [createError, setCreateError] = useState(null);
-  const [joinError, setJoinError] = useState(null);
-  const [createdGroup, setCreatedGroup] = useState(null);
+  const location = useLocation();
+  const { createGroup, addParticipant } = useGroupsApi();
+
+  const [infoMessage, setInfoMessage] = useState(location.state?.message || null);
+  useEffect(() => {
+    if (location.state?.message) {
+      setInfoMessage(location.state.message);
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location, navigate]);
+
+  const [createFeedback, setCreateFeedback] = useState(null);
+  const [joinFeedback, setJoinFeedback] = useState(null);
+  const [activePanel, setActivePanel] = useState('create');
+
+  const [savedHosts, setSavedHosts] = useState([]);
+  const [savedParticipantLinks, setSavedParticipantLinks] = useState([]);
+
+  const refreshStoredGroups = useCallback(() => {
+    setSavedHosts(getRememberedAdminGroups());
+    setSavedParticipantLinks(getRememberedParticipantLinks());
+  }, []);
+
+  useEffect(() => {
+    refreshStoredGroups();
+    const handleFocus = () => refreshStoredGroups();
+    const handleStorage = () => refreshStoredGroups();
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [refreshStoredGroups]);
+
   const {
     register: registerCreate,
-    handleSubmit: handleSubmitCreate,
-    formState: { errors: createErrors, isSubmitting: isCreating }
-  } = useForm({ defaultValues: { name: '', ownerName: '', ownerEmail: '' } });
+    handleSubmit: handleCreateSubmit,
+    formState: { errors: createErrors },
+    reset: resetCreate
+  } = useForm({
+    defaultValues: { name: '', ownerName: '', ownerEmail: '' }
+  });
+
   const {
     register: registerJoin,
-    handleSubmit: handleSubmitJoin,
-    formState: { errors: joinErrors, isSubmitting: isJoining }
-  } = useForm({ defaultValues: { joinCode: '', name: '', email: '' } });
+    handleSubmit: handleJoinSubmit,
+    formState: { errors: joinErrors },
+    reset: resetJoin
+  } = useForm({
+    defaultValues: { joinCode: '', name: '', email: '' }
+  });
 
-  const onCreateGroup = async (values) => {
-    setCreateError(null);
-    try {
-      const group = await groupsApi.createGroup(values);
-      setCreatedGroup(group);
-    } catch (error) {
-      setCreateError(error.message ?? 'No se pudo crear el grupo');
-    }
-  };
+  const [isCreating, setIsCreating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
-  const onJoinGroup = async ({ joinCode, ...participant }) => {
-    setJoinError(null);
+  const onCreate = handleCreateSubmit(async (values) => {
+    setCreateFeedback(null);
+    setIsCreating(true);
     try {
-      const participantCreated = await groupsApi.addParticipant(joinCode.toUpperCase(), participant);
-      navigate(`/grupos/${joinCode.toUpperCase()}/participantes/${participantCreated._id}`, {
-        state: { participant: participantCreated }
+      const payload = {
+        name: values.name.trim(),
+        ownerName: values.ownerName.trim(),
+        ownerEmail: values.ownerEmail.trim()
+      };
+
+      const data = await createGroup(payload);
+
+      rememberAdminCode(data.joinCode, data.adminCode, { name: data.name || payload.name });
+      rememberParticipantAccess(data.hostParticipant.id, data.hostParticipant.accessCode);
+      rememberParticipantForGroup(data.joinCode, {
+        id: data.hostParticipant.id,
+        name: data.hostParticipant.name || payload.ownerName,
+        isOwner: true
+      });
+      refreshStoredGroups();
+
+      setCreateFeedback(`Grupo creado. Tu código es ${data.joinCode}.`);
+      resetCreate();
+
+      navigate(`/grupos/${data.joinCode}`, {
+        state: { adminCode: data.adminCode }
       });
     } catch (error) {
-      setJoinError(error.message ?? 'No se pudo unir al grupo');
+      setCreateFeedback(error.message || 'No pudimos crear el grupo. Inténtalo de nuevo.');
+    } finally {
+      setIsCreating(false);
     }
-  };
+  });
+
+  const onJoin = handleJoinSubmit(async (values) => {
+    setJoinFeedback(null);
+    setIsJoining(true);
+    try {
+      const joinCode = values.joinCode.trim().toUpperCase();
+      const payload = { name: values.name.trim(), email: values.email.trim() };
+      const data = await addParticipant(joinCode, payload);
+
+      rememberParticipantAccess(data.participant.id, data.accessCode);
+      rememberParticipantForGroup(joinCode, data.participant);
+      refreshStoredGroups();
+
+      resetJoin();
+
+      navigate(`/grupos/${joinCode}/participantes/${data.participant.id}`, {
+        state: { accessCode: data.accessCode }
+      });
+    } catch (error) {
+      setJoinFeedback(error.message || 'No pudimos unirte al grupo. Revisa el código e inténtalo de nuevo.');
+    } finally {
+      setIsJoining(false);
+    }
+  });
+
+  const hasSavedRooms = savedHosts.length > 0 || savedParticipantLinks.length > 0;
+
+  const steps = [
+    {
+      title: 'Crea o únete',
+      description: 'Cada invitado recibe un código único y seguro para administrar su lista desde el celular.',
+      icon: '🧑‍🎄'
+    },
+    {
+      title: 'Comparte deseos',
+      description: 'Las listas son privadas: solo tú las editas y tus amigos solo las leen para inspirarse.',
+      icon: '🎁'
+    },
+    {
+      title: 'Magia al revelar',
+      description: 'El anfitrión decide cuándo aparece cada amigo secreto y puede cerrar la sala en un clic.',
+      icon: '✨'
+    }
+  ];
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr]">
-      <div className="flex flex-col gap-6">
-        <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-brand-500/40 via-brand-500/20 to-slate-900 p-8 shadow-2xl shadow-brand-900/40">
-          <p className="text-sm uppercase tracking-[0.4em] text-brand-200">Secret Santa</p>
-          <h2 className="mt-4 text-4xl font-black leading-tight text-white sm:text-5xl">
-            Organiza intercambios navideños en minutos
-          </h2>
-          <p className="mt-4 max-w-xl text-lg text-slate-200">
-            Crea grupos privados, invita a tus amigos y deja que el algoritmo asigne a cada quien su amigo secreto sin repetir y sin revelar nada hasta que llegue el momento perfecto.
-          </p>
-          <ul className="mt-6 grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
-            <li className="flex items-start gap-3">
-              <span className="mt-1 text-brand-200">🎄</span>
-              <span>Generación automática de emparejamientos sin repeticiones.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 text-brand-200">🎁</span>
-              <span>Lista de deseos conectada con tus productos favoritos de Amazon.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 text-brand-200">🔐</span>
-              <span>Controla cuándo revelar el amigo secreto con un solo click.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 text-brand-200">💌</span>
-              <span>Comparte el enlace de tu grupo y deja que todos se inscriban.</span>
-            </li>
-          </ul>
+    <div className="flex flex-col gap-8">
+      {infoMessage ? (
+        <div className="rounded-3xl border border-holly-200/60 bg-white/80 px-4 py-3 text-center text-sm text-moss-700 shadow-sm">
+          {infoMessage}
         </div>
-        {createdGroup ? (
-          <Card
-            title="¡Grupo listo!"
-            description="Comparte el código y guarda este panel para administrar el intercambio."
-            actions={
-              <Button onClick={() => navigate(`/grupos/${createdGroup.joinCode}`)} className="w-full sm:w-auto">
-                Ir al panel del grupo
-              </Button>
-            }
-          >
-            <div className="grid gap-2">
-              <span className="text-sm text-slate-300">Código de invitación</span>
-              <div className="flex items-center justify-between rounded-xl border border-brand-300/40 bg-white/10 p-4 text-2xl font-bold tracking-[0.35em] text-brand-100">
-                {createdGroup.joinCode}
-              </div>
-              <p className="text-sm text-slate-400">
-                Comparte este código con las personas que participarán para que se unan y creen su lista de deseos.
-              </p>
+      ) : null}
+
+      <Card title="Comencemos" description="Un espacio pensado para familias y amigos, con un toque navideño en cada paso.">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {steps.map((step) => (
+            <div
+              key={step.title}
+              className="flex flex-col items-center gap-2 rounded-2xl border border-snow-200 bg-white/90 p-4 text-center"
+            >
+              <span className="text-3xl" aria-hidden>
+                {step.icon}
+              </span>
+              <h3 className="text-base font-semibold text-moss-900">{step.title}</h3>
+              <p className="text-sm text-moss-600">{step.description}</p>
             </div>
-          </Card>
-        ) : null}
-      </div>
-      <div className="flex flex-col gap-6">
-        <Card title="Crear un nuevo grupo" description="Configura el intercambio y obtén un código único para invitar.">
-          <form className="flex flex-col gap-4" onSubmit={handleSubmitCreate(onCreateGroup)}>
-            <TextField
-              label="Nombre del grupo"
-              placeholder="Navidad con la familia"
-              error={createErrors.name?.message}
-              {...registerCreate('name', { required: 'Este campo es obligatorio', minLength: { value: 3, message: 'Debe tener al menos 3 caracteres' } })}
-            />
-            <TextField
-              label="Tu nombre"
-              placeholder="Mariana"
-              error={createErrors.ownerName?.message}
-              {...registerCreate('ownerName', {
-                required: 'Este campo es obligatorio',
-                minLength: { value: 2, message: 'Debe tener al menos 2 caracteres' }
-              })}
-            />
-            <TextField
-              label="Correo electrónico (opcional)"
-              placeholder="tu@email.com"
-              type="email"
-              error={createErrors.ownerEmail?.message}
-              {...registerCreate('ownerEmail', {
-                pattern: { value: /\S+@\S+\.\S+/, message: 'Ingresa un correo válido' }
-              })}
-            />
-            {createError ? <p className="text-sm text-red-300">{createError}</p> : null}
-            <Button type="submit" disabled={isCreating}>
-              {isCreating ? <Loader label="Creando…" /> : 'Crear grupo'}
+          ))}
+        </div>
+      </Card>
+
+      <Card
+        title="Tu sala navideña"
+        description="Alterna entre crear una sala o unirte a una existente. Cada vista está optimizada para móviles."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-snow-50/70 p-2">
+            <Button
+              variant={activePanel === 'create' ? 'secondary' : 'subtle'}
+              className="text-sm"
+              onClick={() => setActivePanel('create')}
+            >
+              🏠 Crear sala
             </Button>
-          </form>
-        </Card>
-        <Card title="Unirme a un grupo" description="Registra tus datos y tu lista de deseos para participar.">
-          <form className="flex flex-col gap-4" onSubmit={handleSubmitJoin(onJoinGroup)}>
-            <TextField
-              label="Código del grupo"
-              placeholder="ABC12345"
-              className="uppercase"
-              error={joinErrors.joinCode?.message}
-              {...registerJoin('joinCode', {
-                required: 'Ingresa el código que te compartieron',
-                minLength: { value: 6, message: 'El código es muy corto' }
-              })}
-            />
-            <TextField
-              label="Tu nombre"
-              placeholder="Carla"
-              error={joinErrors.name?.message}
-              {...registerJoin('name', {
-                required: 'Ingresa tu nombre',
-                minLength: { value: 2, message: 'Debe tener al menos 2 caracteres' }
-              })}
-            />
-            <TextField
-              label="Correo electrónico (opcional)"
-              placeholder="tucorreo@email.com"
-              type="email"
-              error={joinErrors.email?.message}
-              {...registerJoin('email', {
-                pattern: { value: /\S+@\S+\.\S+/, message: 'Ingresa un correo válido' }
-              })}
-            />
-            {joinError ? <p className="text-sm text-red-300">{joinError}</p> : null}
-            <Button type="submit" disabled={isJoining}>
-              {isJoining ? <Loader label="Uniéndote…" /> : 'Quiero participar'}
+            <Button
+              variant={activePanel === 'join' ? 'secondary' : 'subtle'}
+              className="text-sm"
+              onClick={() => setActivePanel('join')}
+            >
+              📩 Unirme
             </Button>
-          </form>
+          </div>
+
+          {activePanel === 'create' ? (
+            <form className="flex flex-col gap-3" onSubmit={onCreate}>
+              <TextField
+                label="Nombre de la sala"
+                placeholder="Navidad en familia"
+                {...registerCreate('name', { required: 'Ponle nombre a tu grupo' })}
+                error={createErrors.name?.message}
+              />
+              <TextField
+                label="Tu nombre"
+                placeholder="Florencia"
+                {...registerCreate('ownerName', { required: 'Cuéntanos quién organiza' })}
+                error={createErrors.ownerName?.message}
+              />
+              <TextField
+                label="Correo de contacto"
+                type="email"
+                placeholder="florencia@email.com"
+                helperText="Así podrás recibir recordatorios si decides activarlos."
+                {...registerCreate('ownerEmail')}
+                error={createErrors.ownerEmail?.message}
+              />
+              <Button type="submit" disabled={isCreating}>
+                {isCreating ? <Loader label="Creando tu sala…" /> : 'Crear sala navideña'}
+              </Button>
+              {createFeedback ? <p className="text-xs text-holly-700">{createFeedback}</p> : null}
+            </form>
+          ) : (
+            <form className="flex flex-col gap-3" onSubmit={onJoin}>
+              <TextField
+                label="Código del grupo"
+                placeholder="ABC123XY"
+                {...registerJoin('joinCode', { required: 'Escribe el código recibido' })}
+                error={joinErrors.joinCode?.message}
+              />
+              <TextField
+                label="Tu nombre"
+                placeholder="Mateo"
+                {...registerJoin('name', { required: 'Tu nombre es necesario' })}
+                error={joinErrors.name?.message}
+              />
+              <TextField
+                label="Correo (opcional)"
+                type="email"
+                placeholder="mateo@email.com"
+                {...registerJoin('email')}
+                error={joinErrors.email?.message}
+              />
+              <Button type="submit" disabled={isJoining}>
+                {isJoining ? <Loader label="Uniéndote…" /> : 'Unirme a la sala'}
+              </Button>
+              {joinFeedback ? <p className="text-xs text-holly-700">{joinFeedback}</p> : null}
+            </form>
+          )}
+        </div>
+      </Card>
+
+      {hasSavedRooms ? (
+        <Card
+          title="Salas guardadas"
+          description="Recupera tus espacios favoritos de anfitrión o participante en segundos."
+        >
+          <div className="flex flex-col gap-4 text-sm text-moss-700">
+            {savedHosts.length ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-holly-100 bg-holly-50/70 p-4">
+                <h3 className="text-base font-semibold text-moss-900">Como anfitrión</h3>
+                <ul className="flex flex-col gap-3">
+                  {savedHosts.map((group) => (
+                    <li
+                      key={`${group.joinCode}-admin`}
+                      className="flex flex-col gap-2 rounded-2xl border border-white/70 bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs uppercase tracking-wide text-moss-500">{group.joinCode}</span>
+                        <strong className="text-lg text-moss-900">{group.name}</strong>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          className="flex-1"
+                          variant="secondary"
+                          onClick={() =>
+                            navigate(`/grupos/${group.joinCode}`, { state: { adminCode: group.adminCode } })
+                          }
+                        >
+                          Panel de anfitrión
+                        </Button>
+                        {group.ownerParticipantId && group.ownerAccessCode ? (
+                          <Button
+                            className="flex-1"
+                            variant="subtle"
+                            onClick={() =>
+                              navigate(`/grupos/${group.joinCode}/participantes/${group.ownerParticipantId}`, {
+                                state: { accessCode: group.ownerAccessCode }
+                              })
+                            }
+                          >
+                            Ver mi lista personal
+                          </Button>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {savedParticipantLinks.length ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-berry-100 bg-berry-50/70 p-4">
+                <h3 className="text-base font-semibold text-moss-900">Como participante</h3>
+                <ul className="flex flex-col gap-3">
+                  {savedParticipantLinks.map((entry) => (
+                    <li
+                      key={`${entry.joinCode}-${entry.participantId}`}
+                      className="flex flex-col gap-2 rounded-2xl border border-white/70 bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs uppercase tracking-wide text-moss-500">{entry.joinCode}</span>
+                        <strong className="text-lg text-moss-900">{entry.groupName}</strong>
+                        <span className="text-xs text-moss-500">Ingresar como {entry.participantName}</span>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          navigate(`/grupos/${entry.joinCode}/participantes/${entry.participantId}`, {
+                            state: { accessCode: entry.accessCode }
+                          })
+                        }
+                      >
+                        Ir a mi intercambio
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </Card>
-      </div>
+      ) : null}
     </div>
   );
 };

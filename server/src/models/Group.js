@@ -15,10 +15,19 @@ const ParticipantSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String },
     wishlist: { type: [WishlistItemSchema], default: [] },
-    assignedParticipantId: { type: mongoose.Schema.Types.ObjectId }
+    assignedParticipantId: { type: mongoose.Schema.Types.ObjectId },
+    accessCode: { type: String, required: true },
+    isOwner: { type: Boolean, default: false }
   },
   { timestamps: true }
 );
+
+ParticipantSchema.set('toJSON', {
+  transform(_doc, ret) {
+    delete ret.accessCode;
+    return ret;
+  }
+});
 
 const GroupSchema = new mongoose.Schema(
   {
@@ -26,11 +35,22 @@ const GroupSchema = new mongoose.Schema(
     joinCode: { type: String, required: true, unique: true },
     ownerName: { type: String, required: true },
     ownerEmail: { type: String },
+    ownerParticipantId: { type: mongoose.Schema.Types.ObjectId },
+    eventDate: { type: Date },
+    budgetAmount: { type: Number },
     allowReveal: { type: Boolean, default: false },
     assignmentsGenerated: { type: Boolean, default: false },
+    adminCode: { type: String, required: true },
     participants: { type: [ParticipantSchema], default: [] }
   },
   { timestamps: true }
 );
+
+GroupSchema.set('toJSON', {
+  transform(_doc, ret) {
+    delete ret.adminCode;
+    return ret;
+  }
+});
 
 export const Group = mongoose.model('Group', GroupSchema);

@@ -5,11 +5,17 @@ Aplicación web para organizar intercambios de regalos navideños (Secret Santa)
 ## Características principales
 
 - 🎄 Creación de grupos con código único para compartir
-- 🧑‍🤝‍🧑 Registro de participantes por parte del anfitrión o mediante enlace directo
+- 🧑‍🤝‍🧑 El anfitrión queda registrado automáticamente como participante y puede invitar al resto por código compartido
 - 🔁 Sorteo automático de amigos secretos evitando auto-asignaciones o duplicados
 - 🔐 Control de revelación para que sólo el anfitrión determine cuándo se muestran los resultados
-- 🎁 Listas de deseos personales con enlaces a Amazon y previsualización usando el ASIN del producto
+- 🎁 Listas de deseos personales con enlaces a Amazon (con buscador integrado) u otras tiendas, mostrando notas y accesos directos
 - 📬 Panel individual para cada participante con acceso al amigo secreto cuando el anfitrión lo habilite
+- 🔔 Actualizaciones en tiempo real gracias a WebSockets (Socket.IO) para que todos vean nuevos deseos y participantes al instante
+- 🔑 Cada persona recibe un código privado para administrar únicamente su lista de deseos y ver a su amigo secreto
+- 🧭 Acceso directo a las salas en las que ya participas o administras desde la pantalla de inicio
+- 🗑️ El anfitrión puede eliminar por completo una sala y notificar al resto en tiempo real
+- 🗓️ El anfitrión define la fecha del encuentro y un presupuesto sugerido en colones para mantener al grupo alineado
+- 📱 Interfaz navideña pensada para usarse cómodamente desde el celular
 
 ## Requisitos previos
 
@@ -27,7 +33,9 @@ Aplicación web para organizar intercambios de regalos navideños (Secret Santa)
    CLIENT_ORIGIN=http://localhost:5173
    ```
 
-3. Instala las dependencias (usa tu gestor preferido, por ejemplo `npm` o `pnpm`).
+3. Crea un archivo `.env` dentro de `client/` tomando como base `client/.env.example` para definir la URL de la API y del socket (en desarrollo puedes dejar los valores por defecto).
+
+4. Instala las dependencias (usa tu gestor preferido, por ejemplo `npm` o `pnpm`).
 
    ```bash
    npm install
@@ -35,7 +43,7 @@ Aplicación web para organizar intercambios de regalos navideños (Secret Santa)
 
    > Este comando ejecutará la instalación en los directorios `server/` y `client/` gracias a los workspaces configurados en la raíz.
 
-4. Inicia los servidores de desarrollo en paralelo:
+5. Inicia los servidores de desarrollo en paralelo:
 
    ```bash
    # Terminal 1
@@ -47,7 +55,7 @@ Aplicación web para organizar intercambios de regalos navideños (Secret Santa)
    npm run dev
    ```
 
-5. Abre `http://localhost:5173` en tu navegador. El frontend utiliza un proxy para reenviar las peticiones `/api` al servidor Express que corre en `http://localhost:4000`.
+6. Abre `http://localhost:5173` en tu navegador. El frontend utiliza un proxy para reenviar las peticiones `/api` y `/socket.io` al servidor Express que corre en `http://localhost:4000`.
 
 ## Scripts disponibles
 
@@ -74,6 +82,7 @@ Aplicación web para organizar intercambios de regalos navideños (Secret Santa)
 ## Notas sobre despliegue
 
 - Define `VITE_API_BASE_URL` en la configuración de tu hosting del frontend si la API se expone en un dominio distinto.
+- Ajusta `VITE_SOCKET_URL` si el servidor de WebSockets vive en otro dominio u origen.
 - Asegúrate de configurar las reglas de CORS mediante la variable `CLIENT_ORIGIN` en producción.
 - El algoritmo de emparejamiento ejecuta un shuffle y garantiza que nadie se asigne a sí mismo; si no encuentra una combinación válida lanzará un error para que el anfitrión lo intente nuevamente.
 
