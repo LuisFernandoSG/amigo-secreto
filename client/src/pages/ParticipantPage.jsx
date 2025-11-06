@@ -263,14 +263,14 @@ export const ParticipantPage = () => {
         <>
           <Card
             title={`¡Hola, ${participant.name}!`}
-            description={`Estás participando en ${group.name}. Todo se sincroniza automáticamente.`}
+            description={`Estás participando en ${group.name}.`}
           >
             <div className="flex flex-col gap-4 text-sm text-moss-600">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-holly-100 bg-holly-50/70 p-3">
+                {/* <div className="rounded-2xl border border-holly-100 bg-holly-50/70 p-3">
                   <p className="text-xs uppercase tracking-wide text-moss-500">Código del grupo</p>
                   <p className="text-base font-semibold text-moss-900">{group.joinCode}</p>
-                </div>
+                </div> */}
                 <div className="rounded-2xl border border-berry-100 bg-berry-50/60 p-3">
                   <p className="text-xs uppercase tracking-wide text-moss-500">Fecha del encuentro</p>
                   <p className="text-base font-semibold text-moss-900">{formatEventDate(group.eventDate)}</p>
@@ -339,7 +339,7 @@ export const ParticipantPage = () => {
 
               <Card
                 title="Tu lista de deseos"
-                description="Añade productos desde Amazon o cualquier tienda. Solo tú la editas."
+                description="Añade productos desde Amazon o cualquier tienda."
               >
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-snow-200 bg-snow-50/70 p-3 text-xs text-moss-500 sm:flex-row sm:items-center">
