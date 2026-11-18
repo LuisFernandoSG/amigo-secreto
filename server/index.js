@@ -40,9 +40,7 @@ app.use((req, res) => {
 async function startServer() {
   try {
     await connectDB();
-    if (process.env.SEED_DEMO !== 'false') {
-      await ensureDemoData();
-    }
+    await ensureDemoData();
 
     app.listen(PORT, HOST, () => {
       console.log(`Amigo Secreto corriendo en http://${HOST}:${PORT}`);

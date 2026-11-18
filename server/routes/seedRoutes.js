@@ -7,11 +7,33 @@ const { generateSecretSantaAssignments } = require('../utils/secretSantaDraw');
 
 const router = express.Router();
 
+const DEMO_USERNAMES = ['carlos', 'elena', 'lucia', 'mateo', 'carmen'];
+const DEMO_FAMILY_CODES = ['GARCIA26', 'PRIMOS26'];
+
+function isDemoEnabled() {
+  const val = String(process.env.SEED_DEMO || 'false').trim().toLowerCase();
+  return val === 'true' || val === '1' || val === 'yes';
+}
+
+async function cleanupDemoData() {
+  try {
+    await Family.deleteMany({ code: { $in: DEMO_FAMILY_CODES } });
+    await User.deleteMany({ username: { $in: DEMO_USERNAMES } });
+  } catch (err) {
+    console.error('Error limpiando datos demo:', err.message);
+  }
+}
+
 async function ensureDemoData() {
+  if (!isDemoEnabled()) {
+    await cleanupDemoData();
+    return;
+  }
+
   const count = await User.countDocuments();
   if (count > 0) return;
 
-  console.log('🎄 Creando datos iniciales de demostración navideña en MongoDB...');
+  console.log('Creando datos iniciales de demostración navideña en MongoDB...');
   const passwordHash = await bcrypt.hash('navidad', 10);
 
   const usersData = [
@@ -106,7 +128,6 @@ async function ensureDemoData() {
   ];
   const assignments1 = generateSecretSantaAssignments(memberIds1, exclusions1);
 
-  // Familia 1: Navidad Familia García (Sorteo ya realizado, listo para abrir el regalo animado)
   await Family.create({
     name: 'Navidad Familia García 2026',
     description: '¡Nuestro tradicional intercambio de Nochebuena! Recuerden envolver su regalo con una tarjeta y una pista.',
@@ -223,26 +244,23 @@ async function ensureDemoData() {
       {
         type: 'family_wall',
         sender: carmen._id,
-        text: '¡Qué emoción mis amores! Ya puse mis deseos en la lista, este año los buñuelos corren por mi cuenta 🎄👵✨',
+        text: '¡Qué emoción mis amores! Ya puse mis deseos en la lista, este año los buñuelos corren por mi cuenta.',
       },
       {
         type: 'family_wall',
         sender: mateo._id,
-        text: '¡Listo sobrinos! Ya revisé el presupuesto, nadie se quede sin poner links en su lista de deseos 🎅🔥',
+        text: '¡Listo sobrinos! Ya revisé el presupuesto, nadie se quede sin poner links en su lista de deseos.',
       },
     ],
     activityFeed: [
-      { text: '🎲 ¡Se realizó el sorteo del Amigo Secreto de la Familia García!', icon: '🎲' },
-      { text: '⭐ Abuelita Carmen agregó "Manta Térmica Suave" a sus deseos', icon: '⭐' },
-      { text: '🎁 Mamá Elena ya envolvió su regalo de Navidad', icon: '🎁' },
-      { text: '🎄 5 familiares están participando en el intercambio', icon: '🎄' },
+      { text: 'Se realizó el sorteo del Amigo Secreto de la Familia García', icon: '🎲' },
+      { text: 'Abuelita Carmen agregó "Manta Térmica Suave" a sus deseos', icon: '⭐' },
     ],
   });
 
-  // Familia 2: Intercambio de Primos & Amigos (donde también juega Carlos y Lucía -> demuestra multi-familia)
   await Family.create({
     name: 'Posada de Primos & Tíos 2026',
-    description: 'Segundo intercambio navideño (más casual y divertido) para la posada del 20 de diciembre.',
+    description: 'Segundo intercambio navideño para la posada del 20 de diciembre.',
     code: 'PRIMOS26',
     creator: lucia._id,
     settings: {
@@ -285,30 +303,31 @@ async function ensureDemoData() {
         category: 'sweets',
       },
     ],
-    activityFeed: [
-      { text: '🎄 Lucía creó la familia "Posada de Primos & Tíos 2026"', icon: '🎅' },
-      { text: '🦌 Carlos se unió a su segunda familia navideña', icon: '🦌' },
-    ],
   });
 
-  console.log('✨ Familias de demostración ("GARCIA26" y "PRIMOS26") creadas con éxito.');
+  console.log('Familias de demostración ("GARCIA26" y "PRIMOS26") creadas con éxito.');
 }
 
-// Endpoint público para listar usuarios demo y entrar con 1 clic
+// Endpoint público para listar usuarios demo (SOLO si SEED_DEMO=true)
 router.get('/demo-accounts', async (req, res) => {
   try {
+    if (!isDemoEnabled()) {
+      return res.json({ demoUsers: [] });
+    }
     await ensureDemoData();
-    const demoUsernames = ['carlos', 'elena', 'lucia', 'mateo', 'carmen'];
-    const users = await User.find({ username: { $in: demoUsernames } }).select('name username avatar bio');
+    const users = await User.find({ username: { $in: DEMO_USERNAMES } }).select('name username avatar bio');
     return res.json({ demoUsers: users });
   } catch (err) {
     return res.status(500).json({ message: 'Error obteniendo cuentas demo.' });
   }
 });
 
-// Login rápido con 1 clic para cuentas demo
+// Login rápido con 1 clic para cuentas demo (SOLO si SEED_DEMO=true)
 router.post('/quick-demo-login', async (req, res) => {
   try {
+    if (!isDemoEnabled()) {
+      return res.status(403).json({ message: 'El modo de demostración está desactivado.' });
+    }
     await ensureDemoData();
     const { username = 'carlos' } = req.body;
     const user = await User.findOne({ username: String(username).toLowerCase() });
