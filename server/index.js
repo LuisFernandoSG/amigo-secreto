@@ -28,12 +28,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Archivos estáticos del Frontend
+// Archivos estáticos del Frontend (sin caché para reflejar cambios al instante)
 const publicDir = path.join(__dirname, '..', 'public');
-app.use(express.static(publicDir));
+app.use(
+  express.static(publicDir, {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    },
+  })
+);
 
 // Fallback SPA
 app.use((req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
