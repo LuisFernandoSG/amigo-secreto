@@ -1,0 +1,28 @@
+{
+  "name": "amigo-secreto-navidad",
+  "version": "1.0.0",
+  "description": "Plataforma Web de Amigo Secreto de Navidad Familiar con MongoDB, Multigrupo, Lista de Deseos, Sonidos y Animaciones",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "keywords": [
+    "navidad",
+    "amigo-secreto",
+    "secret-santa",
+    "mongodb",
+    "familia"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2"
+  }
+}
