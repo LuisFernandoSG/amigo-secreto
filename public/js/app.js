@@ -336,7 +336,7 @@ class AmigoSecretoApp {
     const avatarSelectorHtml = Object.entries(window.AVATARS || {})
       .map(
         ([key, val]) => `
-        <div class="avatar-option ${this.selectedAvatar === key ? 'selected' : ''}" onclick="window.app.selectAuthAvatar('${key}')">
+        <div class="avatar-option ${this.selectedAvatar === key ? 'selected' : ''}" data-avatar="${key}" onclick="window.app.selectAuthAvatar('${key}')">
           ${avatarHtml(key, 'md')}
           <span class="label">${val.label}</span>
         </div>
@@ -487,7 +487,13 @@ class AmigoSecretoApp {
   selectAuthAvatar(avatarKey) {
     window.soundEngine.playClick();
     this.selectedAvatar = avatarKey;
-    this.renderAuthView();
+    document.querySelectorAll('.avatar-option').forEach((el) => {
+      if (el.getAttribute('data-avatar') === avatarKey) {
+        el.classList.add('selected');
+      } else {
+        el.classList.remove('selected');
+      }
+    });
   }
 
   async handleLogin(e) {
