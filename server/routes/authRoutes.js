@@ -162,7 +162,16 @@ router.put('/profile', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado.' });
     }
 
-    if (name && String(name).trim()) user.name = String(name).trim();
+    if (name && String(name).trim()) {
+      const newName = String(name).trim();
+      user.name = newName;
+      // Sincronizar también el nombre dentro de todas las familias donde participa
+      await Family.updateMany(
+        { 'members.user': user._id },
+        { $set: { 'members.$[elem].nickname': newName } },
+        { arrayFilters: [{ 'elem.user': user._id }] }
+      );
+    }
     if (avatar) user.avatar = avatar;
     if (bio !== undefined) user.bio = String(bio).trim();
     if (sizes && typeof sizes === 'object') {
